@@ -60,6 +60,13 @@ function inferContentType(filePath) {
   return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
+function contentDisposition(filename) {
+  const asciiFallback = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  const encoded = encodeURIComponent(filename)
+    .replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
+
 function extractQuality(meta = {}) {
   const applied = meta.applied === true;
   const tier = meta.decisionTier || (applied ? 'validated-match' : 'insufficient');
@@ -195,7 +202,7 @@ async function handleRemove(req, res) {
 
       res.writeHead(200, {
         'Content-Type': filePart.contentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="clean_${filePart.filename}"`,
+        'Content-Disposition': contentDisposition(`clean_${filePart.filename}`),
         'X-Watermark-Removed': String(q.applied),
         'X-Decision-Tier': q.tier,
         'X-Quality-Status': q.status,
