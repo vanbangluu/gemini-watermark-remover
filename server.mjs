@@ -8,6 +8,11 @@ import { removeWatermarkFromFile, removeVideoWatermarkFromFile } from '@pilio/ge
 const PORT = Number(process.env.PORT) || 9010;
 const HOST = process.env.HOST || '127.0.0.1';
 
+function log(...args) {
+  const ts = new Date().toISOString();
+  process.stderr.write(`[${ts}] ${args.join(' ')}\n`);
+}
+
 let sharpModule = null;
 let codecPromise = null;
 
@@ -186,6 +191,8 @@ async function handleRemove(req, res) {
       const cleaned = fs.readFileSync(outputPath);
       const q = extractQuality(result.meta);
 
+      log('remove', `"${filePart.filename}"`, `-> ${q.status} (tier=${q.tier}, quality=${q.quality || 'none'}, conf=${q.confidence == null ? 'n/a' : q.confidence.toFixed(3)}, retry=${q.retryRecommended})`);
+
       res.writeHead(200, {
         'Content-Type': filePart.contentType || 'application/octet-stream',
         'Content-Disposition': `attachment; filename="clean_${filePart.filename}"`,
@@ -199,6 +206,7 @@ async function handleRemove(req, res) {
       });
       res.end(cleaned);
     } catch (error) {
+      log('remove', `"${filePart.filename}"`, 'ERROR', error.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: error.message }));
     } finally {
@@ -329,6 +337,8 @@ async function handleRemoveBatch(req, res) {
     const results = [];
     const tempFiles = [];
 
+    log('batch', `processing ${fileParts.length} file(s)`);
+
     for (const filePart of fileParts) {
       const inputExt = path.extname(filePart.filename).toLowerCase();
       const jobId = randomUUID();
@@ -353,6 +363,7 @@ async function handleRemoveBatch(req, res) {
 
         const cleaned = fs.readFileSync(outputPath);
         const q = extractQuality(result.meta);
+        log('batch', `"${filePart.filename}"`, `-> ${q.status} (tier=${q.tier}, quality=${q.quality || 'none'}, conf=${q.confidence == null ? 'n/a' : q.confidence.toFixed(3)})`);
         results.push({
           name: `clean_${filePart.filename}`,
           data: cleaned,
@@ -366,6 +377,7 @@ async function handleRemoveBatch(req, res) {
           confidence: q.confidence,
         });
       } catch (error) {
+        log('batch', `"${filePart.filename}"`, 'ERROR', error.message);
         results.push({
           name: filePart.filename,
           data: null,
@@ -435,6 +447,11 @@ async function handleRemoveBatch(req, res) {
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
+  const start = Date.now();
+
+  res.on('finish', () => {
+    log(req.method, url.pathname, res.statusCode, `${Date.now() - start}ms`);
+  });
 
   if (req.method === 'GET' && url.pathname === '/') {
     serveIndex(res);
@@ -451,5 +468,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  process.stderr.write(`Gemini Watermark Remover server listening on http://${HOST}:${PORT}\n`);
+  log(`listening on http://${HOST}:${PORT}`);
 });
