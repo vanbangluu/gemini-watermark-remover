@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gemini Watermark Remover</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+  .container { max-width: 720px; width: 100%; }
+  h1 { font-size: 24px; margin-bottom: 8px; color: #f0f6fc; }
+  p.sub { color: #8b949e; margin-bottom: 32px; }
+  .dropzone { border: 2px dashed #30363d; border-radius: 12px; padding: 60px 20px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; margin-bottom: 24px; }
+  .dropzone:hover, .dropzone.drag { border-color: #58a6ff; background: #161b22; }
+  .dropzone p { color: #8b949e; }
+  .dropzone .icon { font-size: 48px; margin-bottom: 12px; }
+  .preview { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .preview-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; text-align: center; max-width: 320px; }
+  .preview-card h3 { font-size: 14px; color: #8b949e; margin-bottom: 8px; }
+  .preview-card img { max-width: 100%; max-height: 300px; border-radius: 4px; }
+  .status { text-align: center; margin: 16px 0; min-height: 24px; }
+  .status.error { color: #f85149; }
+  .status.success { color: #3fb950; }
+  .btn { display: inline-block; background: #238636; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; cursor: pointer; text-decoration: none; }
+  .btn:hover { background: #2ea043; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type="file"] { display: none; }
+  .tier { font-size: 12px; color: #8b949e; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Gemini Watermark Remover</h1>
+  <p class="sub">Remove Gemini watermarks from images and videos. 100% local processing via Reverse Alpha Blending.</p>
+  <div class="dropzone" id="dropzone">
+    <div class="icon">&#x1F5BC;</div>
+    <p>Drop an image or video here, or click to browse</p>
+    <p style="font-size:12px;margin-top:8px;">Supports: PNG, JPEG, WebP, MP4, WebM</p>
+  </div>
+  <input type="file" id="fileInput" accept="image/*,video/*">
+  <div class="status" id="status"></div>
+  <div class="preview" id="preview"></div>
+</div>
+<script>
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const statusEl = document.getElementById('status');
+  const previewEl = document.getElementById('preview');
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  });
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (file) processFile(file);
+  });
+
+  async function processFile(file) {
+    statusEl.textContent = 'Processing...';
+    statusEl.className = 'status';
+    previewEl.innerHTML = '';
+
+    const isVideo = file.type.startsWith('video/');
+    if (!isVideo) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewEl.innerHTML = `<div class="preview-card"><h3>Original</h3><img src="${e.target.result}" alt="Original"></div>`;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/remove', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || 'Server error');
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      if (isVideo) {
+        previewEl.innerHTML += `<div class="preview-card"><h3>Cleaned</h3><video controls src="${url}" style="max-width:300px;border-radius:4px;"></video></div>`;
+      } else {
+        previewEl.innerHTML += `<div class="preview-card"><h3>Cleaned</h3><img src="${url}" alt="Cleaned"></div>`;
+      }
+
+      const tier = res.headers.get('X-Decision-Tier') || 'unknown';
+      const removed = res.headers.get('X-Watermark-Removed');
+
+      statusEl.textContent = removed === 'true' ? `Watermark removed (tier: ${tier})` : `No watermark detected (tier: ${tier})`;
+      statusEl.className = 'status success';
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `clean_${file.name}`;
+      a.textContent = 'Download';
+      a.className = 'btn';
+      a.style.marginTop = '8px';
+      previewEl.lastChild.appendChild(a);
+    } catch (error) {
+      statusEl.textContent = error.message;
+      statusEl.className = 'status error';
+    }
+  }
+</script>
+</body>
+</html>
