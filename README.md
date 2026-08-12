@@ -218,11 +218,12 @@ Server trả về header `X-Decision-Tier` cho biết chất lượng xóa water
 
 | Tier | Ý nghĩa |
 |---|---|
-| `perfect` | Xóa watermark hoàn hảo, không còn residual |
-| `good` | Residual rất thấp, gần như không phát hiện được |
-| `acceptable` | Residual thấp, chấp nhận được cho hầu hết use case |
-| `poor` | Residual đáng kể, có thể thấy artifact ở vùng watermark |
-| `unknown` | Không thể xác định chất lượng |
+| `validated-match` | Watermark được phát hiện và xác nhận; xóa thành công |
+| `direct-match` | Khớp trực tiếp với catalog watermark đã calibrate |
+| `insufficient` | Không đủ bằng chứng watermark — không phát hiện watermark |
+| `runtime-failure` | Lỗi xử lý runtime |
+
+Ngoài ra `X-Watermark-Removed` là `true`/`false` cho biết watermark có thực sự bị xóa hay không.
 
 ---
 
