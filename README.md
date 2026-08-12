@@ -2,6 +2,8 @@
 
 HTTP API server for removing Gemini watermarks from AI-generated images and videos. Wraps the [`@pilio/gemini-watermark-remover`](https://www.npmjs.com/package/@pilio/gemini-watermark-remover) SDK to expose watermark removal as a web service with drag-and-drop UI.
 
+> **SDK version:** server dùng upstream `1.0.39` qua git dependency (commit `a771bc2`) — bản mới hơn npm `1.0.38`, hỗ trợ watermark Gemini 3.x (anchor `96x96 @ 192px margin`, catalog `Gemini 3.1 Flash Image Preview`). Khi npm publish `1.0.39`, có thể đổi về `^1.0.39`.
+
 ---
 
 ## Thuật toán & kỹ thuật
