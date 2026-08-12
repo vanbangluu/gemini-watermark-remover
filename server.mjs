@@ -328,10 +328,6 @@ async function handleRemoveBatch(req, res) {
       }
     }
 
-    const zipFiles = results
-      .filter((r) => r.data)
-      .map((r) => ({ name: r.name, data: r.data }));
-
     const summary = results.map((r) => ({
       file: r.original,
       output: r.data ? r.name : null,
@@ -340,7 +336,14 @@ async function handleRemoveBatch(req, res) {
       error: r.error || null,
     }));
 
-    if (zipFiles.length === 0) {
+    const zipFiles = [
+      { name: 'summary.json', data: Buffer.from(JSON.stringify(summary, null, 2), 'utf8') },
+      ...results
+        .filter((r) => r.data)
+        .map((r) => ({ name: r.name, data: r.data })),
+    ];
+
+    if (zipFiles.length <= 1) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'All files failed processing', summary }));
       return;
@@ -354,7 +357,7 @@ async function handleRemoveBatch(req, res) {
       'X-Processed-Count': String(summary.length),
       'X-Success-Count': String(summary.filter((s) => !s.error).length),
       'X-Failed-Count': String(summary.filter((s) => s.error).length),
-      'X-Summary': JSON.stringify(summary),
+      'X-Summary-Base64': Buffer.from(JSON.stringify(summary), 'utf8').toString('base64'),
     });
     res.end(zip);
 

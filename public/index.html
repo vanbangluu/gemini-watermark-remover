@@ -270,7 +270,13 @@
 
       const successCount = Number(res.headers.get('X-Success-Count') || 0);
       const failedCount = Number(res.headers.get('X-Failed-Count') || 0);
-      const summary = JSON.parse(res.headers.get('X-Summary') || '[]');
+      let summary = [];
+      try {
+        const b64 = res.headers.get('X-Summary-Base64') || '';
+        summary = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      } catch (e) {
+        summary = [];
+      }
 
       progressFill.style.width = '100%';
       progressText.textContent = `Complete: ${successCount} success, ${failedCount} failed`;
