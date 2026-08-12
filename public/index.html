@@ -33,13 +33,18 @@
   .preview-card h3 { font-size: 14px; color: #8b949e; margin-bottom: 8px; }
   .preview-card img { max-width: 100%; max-height: 300px; border-radius: 4px; }
   .preview-card .tier-label { font-size: 11px; margin-top: 6px; padding: 2px 8px; border-radius: 10px; display: inline-block; }
-  .tier-validated-match, .tier-clean { background: #1a3a2a; color: #3fb950; }
-  .tier-direct-match, .tier-good { background: #1a2f3a; color: #58a6ff; }
-  .tier-insufficient { background: #3a2a1a; color: #d29922; }
-  .tier-runtime-failure, .tier-error { background: #3a1a1a; color: #f85149; }
+  .status-clean { background: #1a3a2a; color: #3fb950; }
+  .status-residual { background: #3a2a1a; color: #d29922; }
+  .status-mixed { background: #3a2a1a; color: #d29922; }
+  .status-damage { background: #3a1a1a; color: #f85149; }
+  .status-error { background: #3a1a1a; color: #f85149; }
+  .status-no_watermark { background: #21262d; color: #8b949e; }
+  .status-not_applied { background: #21262d; color: #8b949e; }
+  .status-unknown { background: #21262d; color: #8b949e; }
   .status { text-align: center; margin: 16px 0; min-height: 24px; }
   .status.error { color: #f85149; }
   .status.success { color: #3fb950; }
+  .status.warning { color: #d29922; }
   .btn { display: inline-block; background: #238636; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; cursor: pointer; text-decoration: none; }
   .btn:hover { background: #2ea043; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -94,6 +99,19 @@
   const progressText = document.getElementById('progressText');
   const actionsEl = document.getElementById('actions');
   const batchSummaryEl = document.getElementById('batchSummary');
+
+  function qualityLabel(status) {
+    switch (status) {
+      case 'clean': return { text: 'Clean', cls: 'status-clean' };
+      case 'residual': return { text: 'Residual visible', cls: 'status-residual' };
+      case 'mixed': return { text: 'Mixed result', cls: 'status-mixed' };
+      case 'damage': return { text: 'Possible content damage', cls: 'status-damage' };
+      case 'error': return { text: 'Error', cls: 'status-error' };
+      case 'no_watermark': return { text: 'No watermark', cls: 'status-no_watermark' };
+      case 'not_applied': return { text: 'Not applied', cls: 'status-not_applied' };
+      default: return { text: 'Unknown', cls: 'status-unknown' };
+    }
+  }
 
   function switchMode(m) {
     mode = m;
@@ -222,13 +240,17 @@
       }
 
       const tier = res.headers.get('X-Decision-Tier') || 'unknown';
-      const removed = res.headers.get('X-Watermark-Removed');
-      const tierClass = `tier-${tier}`;
+      const quality = res.headers.get('X-Quality-Status') || 'unknown';
+      const retry = res.headers.get('X-Retry-Recommended') === 'true';
+      const q = qualityLabel(quality);
 
-      statusEl.textContent = removed === 'true' ? `Watermark removed (tier: ${tier})` : `No watermark detected (tier: ${tier})`;
-      statusEl.className = 'status success';
+      statusEl.textContent = q.text + (retry ? ' — retry recommended' : '');
+      statusEl.className = 'status ' + (quality === 'clean' ? 'success' : quality === 'damage' || quality === 'error' ? 'error' : 'warning');
 
-      previewEl.lastChild.innerHTML += `<div class="tier-label ${tierClass}">${tier}</div>`;
+      previewEl.lastChild.innerHTML += `<div class="tier-label ${q.cls}">${q.text}</div>`;
+      if (tier && tier !== 'unknown') {
+        previewEl.lastChild.innerHTML += `<div class="tier-label status-unknown" style="margin-left:4px;">${tier}</div>`;
+      }
 
       const a = document.createElement('a');
       a.href = url;
@@ -268,7 +290,9 @@
         throw new Error(err.error || 'Server error');
       }
 
-      const successCount = Number(res.headers.get('X-Success-Count') || 0);
+      const cleanCount = Number(res.headers.get('X-Clean-Count') || 0);
+      const residualCount = Number(res.headers.get('X-Residual-Count') || 0);
+      const damageCount = Number(res.headers.get('X-Damage-Count') || 0);
       const failedCount = Number(res.headers.get('X-Failed-Count') || 0);
       let summary = [];
       try {
@@ -279,17 +303,24 @@
       }
 
       progressFill.style.width = '100%';
-      progressText.textContent = `Complete: ${successCount} success, ${failedCount} failed`;
+      progressText.textContent = `Complete: ${cleanCount} clean, ${residualCount} residual, ${damageCount} damage, ${failedCount} failed`;
 
-      statusEl.textContent = `${successCount} files processed successfully`;
-      statusEl.className = 'status success';
+      const hasIssues = residualCount + damageCount + failedCount > 0;
+      statusEl.textContent = hasIssues
+        ? `${cleanCount} clean, ${residualCount + damageCount + failedCount} need attention`
+        : `${cleanCount} files cleaned successfully`;
+      statusEl.className = 'status ' + (hasIssues ? 'warning' : 'success');
 
       previewEl.innerHTML = summary.map((s, i) => {
-        const tierClass = `tier-${s.decision_tier || 'unknown'}`;
         if (s.error) {
-          return `<div class="preview-card"><h3>${s.file}</h3><p style="color:#f85149;font-size:13px;">Failed: ${s.error}</p><div class="tier-label tier-error">error</div></div>`;
+          return `<div class="preview-card"><h3>${s.file}</h3><p style="color:#f85149;font-size:13px;">Failed: ${s.error}</p><div class="tier-label status-error">Error</div></div>`;
         }
-        return `<div class="preview-card"><h3>${s.file}</h3><p style="color:#8b949e;font-size:12px;">${s.watermark_removed ? 'Watermark removed' : 'No watermark'}</p><div class="tier-label ${tierClass}">${s.decision_tier || 'unknown'}</div></div>`;
+        const q = qualityLabel(s.quality_status);
+        const extra = [];
+        if (s.retry_recommended) extra.push('retry recommended');
+        if (s.confidence != null) extra.push('conf ' + Math.round(s.confidence * 100) + '%');
+        const extraText = extra.length ? ` &middot; <span style="color:#8b949e;">${extra.join(', ')}</span>` : '';
+        return `<div class="preview-card"><h3>${s.file}</h3><p style="color:#8b949e;font-size:12px;">${q.text}${extraText}</p><div class="tier-label ${q.cls}">${q.text}</div></div>`;
       }).join('');
 
       const blob = await res.blob();

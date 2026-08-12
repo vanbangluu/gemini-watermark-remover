@@ -55,6 +55,42 @@ function inferContentType(filePath) {
   return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
+function extractQuality(meta = {}) {
+  const applied = meta.applied === true;
+  const tier = meta.decisionTier || (applied ? 'validated-match' : 'insufficient');
+  const quality = meta.qualityStatus || null;
+  const bestEffort = meta.bestEffort === true;
+  const retryRecommended = meta.retryRecommended === true;
+  const confidence = Number.isFinite(meta.selectionConfidence) ? meta.selectionConfidence : null;
+  const skipReason = meta.skipReason || null;
+
+  let status;
+  if (!applied) {
+    status = skipReason === 'no-watermark-detected' ? 'no_watermark' : 'not_applied';
+  } else if (quality === 'clean') {
+    status = 'clean';
+  } else if (quality === 'visible-residual') {
+    status = 'residual';
+  } else if (quality === 'possible-content-damage') {
+    status = 'damage';
+  } else if (quality === 'mixed') {
+    status = 'mixed';
+  } else {
+    status = 'unknown';
+  }
+
+  return {
+    applied,
+    tier,
+    quality,
+    status,
+    bestEffort,
+    retryRecommended,
+    confidence,
+    skipReason,
+  };
+}
+
 function parseMultipart(buffer, boundary) {
   const boundaryBuffer = Buffer.from(`--${boundary}`);
   const endBoundary = Buffer.from(`--${boundary}--`);
@@ -148,12 +184,18 @@ async function handleRemove(req, res) {
       }
 
       const cleaned = fs.readFileSync(outputPath);
+      const q = extractQuality(result.meta);
 
       res.writeHead(200, {
         'Content-Type': filePart.contentType || 'application/octet-stream',
         'Content-Disposition': `attachment; filename="clean_${filePart.filename}"`,
-        'X-Watermark-Removed': String(!!result.meta?.applied),
-        'X-Decision-Tier': result.meta?.decisionTier || 'unknown',
+        'X-Watermark-Removed': String(q.applied),
+        'X-Decision-Tier': q.tier,
+        'X-Quality-Status': q.status,
+        'X-Quality': q.quality || 'none',
+        'X-Best-Effort': String(q.bestEffort),
+        'X-Retry-Recommended': String(q.retryRecommended),
+        'X-Confidence': q.confidence == null ? '' : String(q.confidence),
       });
       res.end(cleaned);
     } catch (error) {
@@ -310,20 +352,31 @@ async function handleRemoveBatch(req, res) {
         }
 
         const cleaned = fs.readFileSync(outputPath);
+        const q = extractQuality(result.meta);
         results.push({
           name: `clean_${filePart.filename}`,
           data: cleaned,
           original: filePart.filename,
-          removed: !!result.meta?.applied,
-          tier: result.meta?.decisionTier || 'unknown',
+          applied: q.applied,
+          tier: q.tier,
+          quality: q.quality,
+          status: q.status,
+          bestEffort: q.bestEffort,
+          retryRecommended: q.retryRecommended,
+          confidence: q.confidence,
         });
       } catch (error) {
         results.push({
           name: filePart.filename,
           data: null,
           original: filePart.filename,
-          removed: false,
+          applied: false,
           tier: 'error',
+          quality: null,
+          status: 'error',
+          bestEffort: false,
+          retryRecommended: false,
+          confidence: null,
           error: error.message,
         });
       }
@@ -332,8 +385,13 @@ async function handleRemoveBatch(req, res) {
     const summary = results.map((r) => ({
       file: r.original,
       output: r.data ? r.name : null,
-      watermark_removed: r.removed,
+      watermark_removed: r.applied,
       decision_tier: r.tier,
+      quality_status: r.status,
+      quality: r.quality,
+      best_effort: r.bestEffort,
+      retry_recommended: r.retryRecommended,
+      confidence: r.confidence,
       error: r.error || null,
     }));
 
@@ -352,12 +410,19 @@ async function handleRemoveBatch(req, res) {
 
     const zip = createZip(zipFiles);
 
+    const cleanCount = summary.filter((s) => s.quality_status === 'clean').length;
+    const residualCount = summary.filter((s) => s.quality_status === 'residual' || s.quality_status === 'mixed').length;
+    const damageCount = summary.filter((s) => s.quality_status === 'damage').length;
+    const errorCount = summary.filter((s) => s.error).length;
+
     res.writeHead(200, {
       'Content-Type': 'application/zip',
       'Content-Disposition': 'attachment; filename="watermark_removed_batch.zip"',
       'X-Processed-Count': String(summary.length),
-      'X-Success-Count': String(summary.filter((s) => !s.error).length),
-      'X-Failed-Count': String(summary.filter((s) => s.error).length),
+      'X-Clean-Count': String(cleanCount),
+      'X-Residual-Count': String(residualCount),
+      'X-Damage-Count': String(damageCount),
+      'X-Failed-Count': String(errorCount),
       'X-Summary-Base64': Buffer.from(JSON.stringify(summary), 'utf8').toString('base64'),
     });
     res.end(zip);
