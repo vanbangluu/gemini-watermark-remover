@@ -216,8 +216,9 @@ function createZip(files) {
     cdEntry.writeUInt16LE(0, 30);
     cdEntry.writeUInt16LE(0, 32);
     cdEntry.writeUInt16LE(0, 34);
-    cdEntry.writeUInt32LE(0, 36);
-    cdEntry.writeUInt32LE(offset, 40);
+    cdEntry.writeUInt16LE(0, 36);
+    cdEntry.writeUInt32LE(0, 38);
+    cdEntry.writeUInt32LE(offset, 42);
 
     centralDir.push({ entry: cdEntry, name: nameBuf });
     offset += 30 + nameBuf.length + data.length;
