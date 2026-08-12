@@ -8,6 +8,32 @@ import { removeWatermarkFromFile, removeVideoWatermarkFromFile } from '@pilio/ge
 const PORT = Number(process.env.PORT) || 9010;
 const HOST = process.env.HOST || '127.0.0.1';
 
+let sharpModule = null;
+let codecPromise = null;
+
+async function getCodec() {
+  if (codecPromise) return codecPromise;
+  codecPromise = (async () => {
+    sharpModule = await import('sharp');
+    const sharp = sharpModule.default ?? sharpModule;
+    return {
+      decodeImageData: async (buffer, ctx = {}) => {
+        const { data, info } = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        return { width: info.width, height: info.height, data: Uint8ClampedArray.from(data) };
+      },
+      encodeImageData: async (imageData, ctx = {}) => {
+        const { mimeType } = ctx;
+        let encoder = sharp(Buffer.from(imageData.data), { raw: { width: imageData.width, height: imageData.height, channels: 4 } });
+        if (mimeType === 'image/jpeg') encoder = encoder.jpeg({ quality: 95 });
+        else if (mimeType === 'image/webp') encoder = encoder.webp({ quality: 95 });
+        else encoder = encoder.png();
+        return encoder.toBuffer();
+      },
+    };
+  })();
+  return codecPromise;
+}
+
 const UPLOAD_DIR = path.join(os.tmpdir(), 'gemini-watermark-remover-server');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -112,9 +138,12 @@ async function handleRemove(req, res) {
       if (VIDEO_EXTENSIONS.has(inputExt)) {
         result = await removeVideoWatermarkFromFile(inputPath, { outputPath });
       } else {
+        const codec = await getCodec();
         result = await removeWatermarkFromFile(inputPath, {
           outputPath,
           mimeType: filePart.contentType || inferContentType(filePart.filename),
+          decodeImageData: codec.decodeImageData,
+          encodeImageData: codec.encodeImageData,
         });
       }
 
