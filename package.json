@@ -8,7 +8,7 @@
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@pilio/gemini-watermark-remover": "^1.0.38",
+    "@pilio/gemini-watermark-remover": "git+https://github.com/GargantuaX/gemini-watermark-remover.git#a771bc28df7e6af97dd862d5f293157207ba6d58",
     "sharp": "^0.34.5"
   },
   "engines": {
