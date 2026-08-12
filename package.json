@@ -8,7 +8,7 @@
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@pilio/gemini-watermark-remover": "^1.0.39",
+    "@pilio/gemini-watermark-remover": "^1.0.38",
     "sharp": "^0.34.5"
   },
   "engines": {
